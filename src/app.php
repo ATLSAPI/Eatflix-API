@@ -21,5 +21,5 @@ $albums = $app['db']->fetchAll($sql);
 $app->mount('/v1', include __DIR__.'/albums.php');
 $app->mount('/v1', include __DIR__.'/reviews.php');
 $app->mount('/v1', include __DIR__.'/restaurants.php');
-
+$app->mount('/v1', include __DIR__.'/users.php');
 return $app;

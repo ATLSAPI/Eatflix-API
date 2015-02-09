@@ -36,13 +36,13 @@ $api->before(
 $app['validate_restaurants'] = function(){
     $validator = new Assert\Collection([
         'name' => [new Assert\NotBlank(), new Assert\Length(['min'=>3])],
-        'address' => [new Assert\NotBlank(), new Assert\Length(['max'=>2]),new Assert\Type(['type'=>"INTEGER"])],
-//        'postcode' => [new Assert\NotBlank(), new Assert\Callback($this, $app['isPostcode']($this))],
+        'address' => [new Assert\NotBlank(), /*,new Assert\Type(['type'=>"INTEGER"])*/],
+        'postcode' => [new Assert\NotBlank()/*, new Assert\Callback($this, $app['isPostcode']($this))*/],
         'description' => [new Assert\NotBlank(), new Assert\Length(['min'=>5])],
         'type_id' => [new Assert\NotBlank()],
-        'user_id' => [new Assert\NotBlank(), ],
         'cuisine_id' => [new Assert\NotBlank()],
-        'town' => [new Assert\NotBlank()]
+        'town' => [new Assert\NotBlank()],
+        'image' => [new Assert\NotBlank()]
     ]);
 
     return $validator;
@@ -78,43 +78,104 @@ $app['IsPostcode'] = function ($postcode)
     }
 };
 /**
- * Get all restaurantss
+ * Get all restaurants
  */
 $api->get('/restaurants', function () use($app){
-    $user = $app['user'];
-    if($user === null) {
-        return new Response("You are not authorised", 401);
+    $sql = 'select restaurants.name AS restaurant,address, postcode, town, type.name AS type,
+                cuisine.name AS cuisine
+                FROM restaurants, cuisine, type
+                WHERE restaurants.cuisine_id = cuisine.id
+                AND restaurants.type_id = type.id';
+    $restaurants = $app['db']->fetchAll($sql);
+    return $app->json($restaurants);
+
+});
+$api->get('/bars', function () use($app){
+    $sql = 'select restaurants.name AS restaurant,address, postcode, town, type.name AS type,
+                cuisine.name AS cuisine
+                FROM restaurants, cuisine, type
+                WHERE restaurants.cuisine_id = cuisine.id
+                AND restaurants.type_id = type.id
+                AND LOWER(type.name) = ?';
+    $restaurants = $app['db']->fetchAll($sql, ['bar']);
+    return $app->json($restaurants);
+
+});
+
+$api->get('/pubs', function () use($app){
+    $sql = 'select restaurants.name AS restaurant,address, postcode, town, type.name AS type,
+                cuisine.name AS cuisine
+                FROM restaurants, cuisine, type
+                WHERE restaurants.cuisine_id = cuisine.id
+                AND restaurants.type_id = type.id
+                AND LOWER(type.name) = ?';
+    $restaurants = $app['db']->fetchAll($sql, ['pub']);
+    return $app->json($restaurants);
+
+});
+$api->get('/create', function () use($app)
+{
+    function nextId($id)
+    {
+        $id += $id;
     }
-    else {
-        $sql = 'select restaurants.name AS restaurant,address, postcode, town, type.name AS type,
-                    cuisine.name AS cuisine
-                    FROM restaurants, cuisine, type
-                    WHERE restaurants.cuisine_id = cuisine.id
-                    AND restaurants.type_id = type.id';
-        $restaurants = $app['db']->fetchAll($sql);
-        return $app->json($restaurants);
-    }
+    //sqlite_create_function($app['db'], 'rev', 'nextId', 1);
+    $app['db']->sqliteCreateFunction('rev', 'nextId', 1);
+    return $app->json('Done');
+
 });
 /**
  * Get restaurants by id
  */
 $api->get('/restaurants/{id}', function ($id) use($app){
+    $db = $app['db'];
+    $sql = 'select restaurants.name AS restaurant,address, postcode, town, type.name AS type,
+                cuisine.name AS cuisine
+                FROM restaurants, cuisine, type
+                WHERE restaurants.cuisine_id = cuisine.id
+                AND restaurants.type_id = type.id AND restaurants.id = ?';
+    $restaurants = $db->fetchAssoc($sql, [(int)$id]);
+    if ($restaurants == false) {
+        return $app->abort(404, 'Restaurant Not found');
+    }
+    return $app->json($restaurants);
+});
+$api->post('/restaurants', function(Request $request) use($app){
+
     $user = $app['user'];
+    $date= new \DateTime('now');
+    $date = $date->format('d/m/Y');
     if($user === null) {
         return new Response("You are not authorised", 401);
     }
     else {
-        $db = $app['db'];
-        $sql = 'select restaurants.name AS restaurant,address, postcode, town, type.name AS type,
-                    cuisine.name AS cuisine
-                    FROM restaurants, cuisine, type
-                    WHERE restaurants.cuisine_id = cuisine.id
-                    AND restaurants.type_id = type.id AND restaurants.id = ?';
-        $restaurants = $db->fetchAssoc($sql, [(int)$id]);
-        if ($restaurants == false) {
-            return $app->abort(404, 'Restaurant Not found');
+        $data = $request->request->all();
+        $reviewValidator = $app['validate_restaurants'];
+        $errors = $app['validator']->validateValue($data, $reviewValidator);
+        $user_id = $app['user_current'];
+        if (count($errors) > 0) {
+            $errorList = [];
+            foreach ($errors as $error) {
+                $errorList[$error->getPropertyPath()] = $error->getMessage();
+            }
+            return $app->json($errorList, 400);
+        } else {
+            $app['db']->insert('restaurants',
+                [
+                    'description' => $data['description'],
+                    'name' => $data['name'],
+                    'address' => $data['address'],
+                    'cuisine_id' => $data['cuisine_id'],
+                    'user_id' => $user_id,
+                    'town' => $data['town'],
+                    'postcode' => $data['postcode'],
+                    'image' => $data['image'],
+                    'type_id' => $data['type_id']
+                ]
+            );
+            $id = $app['db']->lastInsertId();
+            return new Response(null, 201, ['Location' => '/v1/restaurants/' . $id]);
         }
-        return $app->json($restaurants);
     }
 
 });
@@ -123,36 +184,46 @@ $api->get('/restaurants/{id}', function ($id) use($app){
  */
 $api->put('/restaurants/{id}', function($id, Request $request) use($app) {
     $user = $app['user_current'];
-    if ($user === $id)
+    $isCreated = $app['db']->fetchAssoc('select * from restaurants WHERE id = ? AND user_id = ?', [(int)$id,(int)$user]);
+    if ($isCreated === false)
     {
-        $app->abort(401, 'You are not authorised');
+        return new Response('You did not create this', 401);
     }
-    $restaurants = $app['db']->fetchAssoc('select * from restaurants WHERE id = ?' ,[(int)$id]);
-    $data = $request->request->all();
-    if($restaurants == false){
-        return $app->abort(404,'Restaurant not found');
-    }
-    $restaurantValidator = $app['validate_restaurants'];
-    $errors = $app['validator']->validateValue($data,$restaurantValidator);
-    if(count($errors)>0) {
-        $errorList = [];
-        foreach($errors as $error){
-            $errorList[$error->getPropertyPath()] = $error->getMessage();
+    elseif($app['security']->isGranted('ROLE_ADMIN')) {
+        $user_id = $app['user_current'];
+        $restaurant = $app['db']->fetchAssoc('select * from restaurants WHERE id = ?', [(int)$id]);
+        $data = $request->request->all();
+        if ($restaurant === false) {
+            return new Response('Restaurant not found', 404);
         }
-        return $app->json($errorList, 400);
+        $restaurantValidator = $app['validate_restaurants'];
+        $errors = $app['validator']->validateValue($data, $restaurantValidator);
+        if (count($errors) > 0) {
+            $errorList = [];
+            foreach ($errors as $error) {
+                $errorList[$error->getPropertyPath()] = $error->getMessage();
+            }
+            return $app->json($errorList, 400);
+        } else {
+            $app['db']->update('restaurants',
+                [
+                    'description' => $data['description'],
+                    'name' => $data['name'],
+                    'address' => $data['address'],
+                    'cuisine_id' => $data['cuisine_id'],
+                    'user_id' => $user_id,
+                    'town' => $data['town'],
+                    'postcode' => $data['postcode'],
+                    'image' => $data['image'],
+                    'type_id' => $data['type_id']
+                ],
+                ['id' => (int)$id]
+            );
+            return new Response(null, 204);
+        }
     }
     else{
-        $app['db']->update('restaurants',
-            [
-                'description'    => $data['description'],
-                'address'    => $data['address'],
-                'town'    => $data['town'],
-                'cuisine' => $data['cuisine_id'],
-                'type' => $data['type_id']
-            ],
-            ['id'=>(int)$id]
-        );
-        return new Response(null,204);
+        return new Response('Admin task only', 401);
     }
 
 });
@@ -163,14 +234,14 @@ $api->delete('restaurants/{id}', function($id) use($app) {
     $user = $app['user_current'];
     if ($user === $id)
     {
-        return $app->abort(401, 'You are not authorised');
+        return new Response('You are not authorised', 401);
     }
     else {
         $sql = 'SELECT * FROM restaurants WHERE id = ?';
         $result = $app['db']->fetchAssoc($sql, array((int)$id));
 
         if ($result === false) {
-            return $app->abort(418, "Album not Found");
+            return new Response('Restaurant not Found', 404);
         } else {
             $app['db']->delete('restaurants', array('id' => $id));
         }

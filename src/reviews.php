@@ -25,12 +25,8 @@ $api->before(
 $app['validate_reviews'] = function(){
     $validator = new Assert\Collection([
         'description' => [new Assert\NotBlank(), new Assert\Length(['min'=>3])],
-        'rating' => [new Assert\NotBlank(), new Assert\Length(['max'=>2]),new Assert\Type(['type'=>"INTEGER"])],
-        'date' => [new Assert\Date()],
-        'restaurant_id' => [new Assert\NotBlank(),new Assert\Type(['type'=>"INTEGER"])],
-        'user_id' => [new Assert\NotBlank(), new Assert\Type(['type'=>"INTEGER"])],
-        'created' => [new Assert\Date()],
-        'modified' => [new Assert\Date()]
+        'rating' => [new Assert\NotBlank(), new Assert\Length(['max'=>2]),/*new Assert\Type(['type'=>"INTEGER"])*/],
+        'restaurant_id' => [new Assert\NotBlank(),/*new Assert\Type(['type'=>"INTEGER"])*/],
     ]);
 
     return $validator;
@@ -48,15 +44,6 @@ $app['user_current'] = function() use($app){
     $user_id = $app['db']->fetchAssoc($sql,array($user->getUsername()));
     return $user_id['id'];
 };
-
-$api->post('/users',function(Request $request) use ($app) {
-    /** @var \SimpleUser\UserManager £userManager */
-    $userManager = $app['user.manager'];
-    $user = $userManager->createUser($request->request->get('email'),
-        $request->request->get('password'));
-    $userManager->insert($user);
-    return new Response(null, 201);
-});
 /**
  * Get all reviews
  */
@@ -66,11 +53,11 @@ $api->get('/reviews', function () use($app){
         return new Response("You are not authorised", 401);
     }
     else {
-        $sql = 'select reviews.id, reviews.description, user_id, restaurants.user_id, restaurants.name as restaurant, type.name AS type,
+        $sql = 'select reviews.id, reviews.description, reviews.user_id, restaurants.user_id, restaurants.name as restaurant, type.name AS type,
                     rating, created, modified, cuisine.name AS cuisine
                     FROM reviews, restaurants,cuisine, type
                     WHERE restaurant_id = restaurants.id AND restaurants.cuisine_id = cuisine.id
-                    AND restaurants.type_id = type.id';
+                    AND restaurants.type_id = type.id ORDER BY date(created) DESC';
         $reviews = $app['db']->fetchAll($sql);
         return $app->json($reviews);
     }
@@ -85,23 +72,73 @@ $api->get('/reviews/{id}', function ($id) use($app){
     }
     else {
         $db = $app['db'];
-        $sql = 'select reviews.id, reviews.description, user_id, restaurants.name as restaurant, type.name AS type,
+        $sql = 'select reviews.id, reviews.description, reviews.user_id, restaurants.name as restaurant, type.name AS type,
                     rating, created, modified, cuisine.name AS cuisine
                     FROM reviews, restaurants,cuisine, type
                     WHERE restaurant_id = restaurants.id AND restaurants.cuisine_id = cuisine.id
                     AND restaurants.type_id = type.id AND reviews.id = ?';
         $reviews = $db->fetchAssoc($sql, [(int)$id]);
         if ($reviews == false) {
-            return $app->abort(404, 'Review Not found');
+            return $app->abort(404, 'Review not found');
         }
         return $app->json($reviews);
     }
 
 });
 /**
+ * Post restaurant
+ */
+$api->post('/reviews', function(Request $request) use($app){
+
+    $user = $app['user'];
+    $date= new \DateTime('now');
+    $date = $date->format('d/m/Y');
+    if($user === null) {
+        return new Response("You are not authorised", 401);
+    }
+    else {
+        $data = $request->request->all();
+        $restaurant_id = $data['restaurant_id'];
+        $sql = 'select * from restaurants WHERE id = ?';
+        $restaurant = $app['db']->fetchAssoc($sql, [(int)$restaurant_id]);
+        if ($restaurant == false) {
+            return $app->abort(400, "Bad Request");
+        }
+
+        $reviewValidator = $app['validate_reviews'];
+        $errors = $app['validator']->validateValue($data, $reviewValidator);
+        $user_id = $app['user_current'];
+        if (count($errors) > 0) {
+            $errorList = [];
+            foreach ($errors as $error) {
+                $errorList[$error->getPropertyPath()] = $error->getMessage();
+            }
+            return $app->json($errorList, 400);
+        } else {
+            $app['db']->insert('reviews',
+                [
+                    'description' => $data['description'],
+                    'created' => $date,
+                    'rating' => $data['rating'],
+                    'restaurant_id' => $data['restaurant_id'],
+                    'user_id' => $user_id,
+                    'modified' => $date
+                ]
+            );
+            $id = $app['db']->lastInsertId();
+            return new Response(null, 201, ['Location' => '/api/reviews/' . $id]);
+        }
+    }
+
+});
+
+
+/**
  * Update reviews by id if current user created it
  */
 $api->put('/reviews/{id}', function($id, Request $request) use($app) {
+    $date= new \DateTime('now');
+    $date = $date->format('d/m/Y');
     $user = $app['user_current'];
     $reviews = $app['db']->fetchAssoc('select * from reviews WHERE id = ?' ,[(int)$id]);
     $data = $request->request->all();
@@ -124,8 +161,8 @@ $api->put('/reviews/{id}', function($id, Request $request) use($app) {
         } else {
             $app['db']->update('reviews',
                 [
-                    'description' => $data['review'],
-                    'modified' => $data['modified'],
+                    'description' => $data['description'],
+                    'modified' => $date,
                     'rating' => $data['rating'],
                 ],
                 ['id' => (int)$id]
@@ -149,7 +186,7 @@ $api->delete('reviews/{id}', function($id) use($app) {
         $result = $app['db']->fetchAssoc($sql, array((int)$id));
 
         if ($result === false) {
-            $app->abort(418, "Album not Found");
+            $app->abort(401, 'Review not Found');
         } else {
             $app['db']->delete('reviews', array('id' => $id));
         }
