@@ -1,22 +1,24 @@
 {
-    "name": "ricklab/advanced-programming-skeleton",
-    "version": "1.0",
-    "authors":[{
-                   "name":"Rick Ogden",
-                   "email":"rick@rickogden.com",
-                   "homepage":"http://www.rickogden.com",
-                   "role":"developer"
-               }],
-    "require": {
-        "php": ">=5.4",
-        "silex/silex": "~1.2",
-        "doctrine/dbal": "2.2.*",
-        "nocarrier/hal": "0.9.*",
-        "symfony/form": "~2.3",
-        "symfony/validator": "~2.3",
-        "symfony/config": "~2.3",
-        "symfony/translation": "~2.3",
-        "symfony/security-csrf": "~2.4",
-        "symfony/security": "~2.3"
-    }
+  "name": "ricklab/advanced-programming-skeleton",
+  "version": "1.0",
+  "minimum-stability":"dev",
+  "authors":[{
+    "name":"Rick Ogden",
+    "email":"rick@rickogden.com",
+    "homepage":"http://www.rickogden.com",
+    "role":"developer"
+  }],
+  "require": {
+    "php": ">=5.4",
+    "silex/silex": "~1.2",
+    "doctrine/dbal": "2.5.*",
+    "nocarrier/hal": "0.9.*",
+    "symfony/form": "~2.3",
+    "symfony/validator": "2.4",
+    "symfony/config": "~2.3",
+    "symfony/translation": "~2.3",
+    "symfony/security-csrf": "~2.4",
+    "symfony/security": "2.5",
+    "jasongrimes/silex-simpleuser": "~2.0"
+  }
 }
