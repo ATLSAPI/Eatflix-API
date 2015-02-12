@@ -33,6 +33,7 @@ $api->before(
  * @return Assert\Collection
  * Validate records for restaurant table
  */
+
 $app['validate_restaurants'] = function(){
     $validator = new Assert\Collection([
         'name' => [new Assert\NotBlank(), new Assert\Length(['min'=>3])],
@@ -41,8 +42,7 @@ $app['validate_restaurants'] = function(){
         'description' => [new Assert\NotBlank(), new Assert\Length(['min'=>5])],
         'type_id' => [new Assert\NotBlank()],
         'cuisine_id' => [new Assert\NotBlank()],
-        'town' => [new Assert\NotBlank()],
-        'image' => [new Assert\NotBlank()]
+        'town' => [new Assert\NotBlank()]
     ]);
 
     return $validator;
@@ -80,9 +80,42 @@ $app['IsPostcode'] = function ($postcode)
 /**
  * Get all restaurants
  */
+$api->post('/image', function (Request $request) use ($app) {
+    $file_bag = $request->files;
+    $location =__DIR__ .'/../public_html/upload';
+    $i=0;
+    if ($file_bag->count() > 0)
+    {
+        foreach($file_bag as $file) {
+            $file->move($location, '_img'.$i);
+            $i++;
+        }
+    }
+    return $file_bag->count();
+
+});
+$api->get('restaurants/{id}/image', function($id) use ($app)
+{
+    $sql = 'select image FROM restaurants WHERE id = ?';
+    $image = $app['db']->fetchColumn($sql, [(int)$id], 0);
+    if($image == false)
+    {
+        return new Response('Not found', 404);
+    }
+    //$path = '_img0';
+    $path = $image;
+    $location =__DIR__ .'/../public_html/upload/';
+    if (!file_exists($location.$path)) {
+        return $app->abort(404);
+    }
+    return $app->sendFile($location.$path,200, array('Content-type' => 'text/jpg'), 'attachment');
+    //return "Image".$image;
+
+
+});
 $api->get('/restaurants', function () use($app){
-    $sql = 'select restaurants.name AS restaurant,address, postcode, town, type.name AS type,
-                cuisine.name AS cuisine
+    $sql = 'select restaurants.id, restaurants.name AS restaurant,address,description, postcode, town, type.name AS type,
+                cuisine.name AS cuisine, image
                 FROM restaurants, cuisine, type
                 WHERE restaurants.cuisine_id = cuisine.id
                 AND restaurants.type_id = type.id';
@@ -91,7 +124,7 @@ $api->get('/restaurants', function () use($app){
 
 });
 $api->get('/bars', function () use($app){
-    $sql = 'select restaurants.name AS restaurant,address, postcode, town, type.name AS type,
+    $sql = 'select restaurants.id, restaurants.name AS restaurant,address, description, postcode, town, type.name AS type,
                 cuisine.name AS cuisine
                 FROM restaurants, cuisine, type
                 WHERE restaurants.cuisine_id = cuisine.id
@@ -103,7 +136,7 @@ $api->get('/bars', function () use($app){
 });
 
 $api->get('/pubs', function () use($app){
-    $sql = 'select restaurants.name AS restaurant,address, postcode, town, type.name AS type,
+    $sql = 'select restaurants.id, restaurants.name AS restaurant,address,description, postcode, town, type.name AS type,
                 cuisine.name AS cuisine
                 FROM restaurants, cuisine, type
                 WHERE restaurants.cuisine_id = cuisine.id
@@ -113,23 +146,12 @@ $api->get('/pubs', function () use($app){
     return $app->json($restaurants);
 
 });
-$api->get('/create', function () use($app)
-{
-    function nextId($id)
-    {
-        $id += $id;
-    }
-    //sqlite_create_function($app['db'], 'rev', 'nextId', 1);
-    $app['db']->sqliteCreateFunction('rev', 'nextId', 1);
-    return $app->json('Done');
-
-});
 /**
  * Get restaurants by id
  */
 $api->get('/restaurants/{id}', function ($id) use($app){
     $db = $app['db'];
-    $sql = 'select restaurants.name AS restaurant,address, postcode, town, type.name AS type,
+    $sql = 'select restaurants.id, restaurants.name AS restaurant, address, description, postcode, town, type.name AS type,
                 cuisine.name AS cuisine
                 FROM restaurants, cuisine, type
                 WHERE restaurants.cuisine_id = cuisine.id
@@ -141,7 +163,11 @@ $api->get('/restaurants/{id}', function ($id) use($app){
     return $app->json($restaurants);
 });
 $api->post('/restaurants', function(Request $request) use($app){
-
+    $file_bag = $request->files;
+    $location =__DIR__ .'/../public_html/upload';
+    $path = "";
+    $filename = "";
+    $i=0;
     $user = $app['user'];
     $date= new \DateTime('now');
     $date = $date->format('d/m/Y');
@@ -160,6 +186,16 @@ $api->post('/restaurants', function(Request $request) use($app){
             }
             return $app->json($errorList, 400);
         } else {
+
+            if ($file_bag->count() > 0)
+            {
+                $filename = '_img'.md5(rand(10000,99999));
+                foreach($file_bag as $file) {
+                    $file->move($location, $filename);
+                    $i++;
+                }
+                $location = $filename;
+            }
             $app['db']->insert('restaurants',
                 [
                     'description' => $data['description'],
@@ -169,7 +205,7 @@ $api->post('/restaurants', function(Request $request) use($app){
                     'user_id' => $user_id,
                     'town' => $data['town'],
                     'postcode' => $data['postcode'],
-                    'image' => $data['image'],
+                    'image' => $location,
                     'type_id' => $data['type_id']
                 ]
             );
@@ -231,8 +267,28 @@ $api->put('/restaurants/{id}', function($id, Request $request) use($app) {
  * Delete restaurants by id. Return to this
  */
 $api->delete('restaurants/{id}', function($id) use($app) {
-    $user = $app['user_current'];
-    if ($user === $id)
+    //$user = $app['user_current'];
+    if (!$app['security']->isGranted('ROLE_ADMIN'))
+    {
+        return new Response('You are not authorised', 401);
+    }
+    else {
+        $sql = 'SELECT * FROM restaurants WHERE id = ?';
+        $result = $app['db']->fetchAssoc($sql, array((int)$id));
+
+        if ($result === false) {
+            return new Response('Restaurant not Found', 404);
+        } else {
+            $app['db']->delete('restaurants', array('id' => $id));
+            $app['db']->delete('reviews', array('resturant_id' => $id));
+        }
+
+        return new Response(null, 204);
+    }
+});
+$api->get('restaurants/{id}/delete', function($id) use($app) {
+    //$user = $app['user_current'];
+    if (!$app['security']->isGranted('ROLE_ADMIN'))
     {
         return new Response('You are not authorised', 401);
     }

@@ -17,6 +17,19 @@ $api = $app['controllers_factory'];
 //$app['mailer'] = $app->share(function ($app) {
 //    return new \Swift_Mailer($app['swiftmailer.transport']);
 //});
+/**retrieve
+ * @return mixed
+ * To retrieve the current user id
+ */
+$app['user_current'] = function() use($app){
+    $token = $app['security']->getToken();
+    if(null !== $token){
+        $user = $token->getUser();
+    }
+    $sql = 'SELECT id FROM users WHERE email = ?';
+    $user_id = $app['db']->fetchAssoc($sql,array($user->getUsername()));
+    return $user_id['id'];
+};
 $api->post('/feedback', function () use ($app) {
     //$request = $app['request'];
   $body = 'Hello';
@@ -45,6 +58,18 @@ $api->post('/users',function(Request $request) use ($app) {
     $userManager->insert($user);
 
     return new Response(null, 201);
+});
+$api->post('users/login', function(Request $request) use ($app)
+{
+    $id = $app['user_current'];
+    $user = $app['user'];
+    if($user === null) {
+        return new Response("You are not authorised", 401);
+    }
+    else {
+        $string = "{ 'id' : "+$id + "}\n}";
+        return $string;
+    }
 });
 //$app->error(function (\Exception $e, $code) use ($app) {
 //    if ($app['debug']) {

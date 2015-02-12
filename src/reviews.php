@@ -54,7 +54,7 @@ $api->get('/reviews', function () use($app){
     }
     else {
         $sql = 'select reviews.id, reviews.description, reviews.user_id, restaurants.user_id, restaurants.name as restaurant, type.name AS type,
-                    rating, created, modified, cuisine.name AS cuisine
+                    rating, created, modified, cuisine.name AS cuisine, image
                     FROM reviews, restaurants,cuisine, type
                     WHERE restaurant_id = restaurants.id AND restaurants.cuisine_id = cuisine.id
                     AND restaurants.type_id = type.id ORDER BY date(created) DESC';
@@ -73,7 +73,7 @@ $api->get('/reviews/{id}', function ($id) use($app){
     else {
         $db = $app['db'];
         $sql = 'select reviews.id, reviews.description, reviews.user_id, restaurants.name as restaurant, type.name AS type,
-                    rating, created, modified, cuisine.name AS cuisine
+                    rating, created, modified, cuisine.name AS cuisine, image
                     FROM reviews, restaurants,cuisine, type
                     WHERE restaurant_id = restaurants.id AND restaurants.cuisine_id = cuisine.id
                     AND restaurants.type_id = type.id AND reviews.id = ?';
