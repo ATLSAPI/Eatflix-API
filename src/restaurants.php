@@ -22,11 +22,11 @@ $api->before(
             $data = json_decode($request->getContent(), true);
             $request->request->replace(is_array($data)?$data:array());
         }
-//        elseif(0===strpos($request->headers->get('Content-Type'),('application/xml')))
-//        {
-//            $data = xml_parse($request->getContent(), true);
-//            $request->request->replace(is_array($data)?$data:array());
-//        }
+        elseif(0===strpos($request->headers->get('Content-Type'),('application/xml')))
+        {
+            $data = xml_parse($request->getContent(), true);
+            $request->request->replace(is_array($data)?$data:array());
+        }
     }
 );
 /**
@@ -77,6 +77,11 @@ $app['IsPostcode'] = function ($postcode)
         return false;
     }
 };
+//$app['']('/token', function(Request $request) use ($app)
+//{
+//    $token = $request->headers->get('token');
+//    return $token;
+//});
 /**
  * Get all restaurants
  */
@@ -171,14 +176,17 @@ $api->post('/restaurants', function(Request $request) use($app){
     $user = $app['user'];
     $date= new \DateTime('now');
     $date = $date->format('d/m/Y');
-    if($user === null) {
+    $token = $request->headers->get('token');
+    $sql = 'select * from token WHERE token.token = ?';
+    $valid =  $app['db']->fetchAssoc($sql, [$token]);
+    if ($valid === false) {
         return new Response("You are not authorised", 401);
     }
     else {
         $data = $request->request->all();
         $reviewValidator = $app['validate_restaurants'];
         $errors = $app['validator']->validateValue($data, $reviewValidator);
-        $user_id = $app['user_current'];
+        $user_id = $valid['user_id'];
         if (count($errors) > 0) {
             $errorList = [];
             foreach ($errors as $error) {
@@ -220,46 +228,63 @@ $api->post('/restaurants', function(Request $request) use($app){
  */
 $api->put('/restaurants/{id}', function($id, Request $request) use($app) {
     $user = $app['user_current'];
-    $isCreated = $app['db']->fetchAssoc('select * from restaurants WHERE id = ? AND user_id = ?', [(int)$id,(int)$user]);
-    if ($isCreated === false)
-    {
-        return new Response('You did not create this', 401);
+    $file_bag = $request->files;
+    $location =__DIR__ .'/../public_html/upload';
+    $i=0;
+    $token = $request->headers->get('token');
+    $sql = 'select * from token WHERE token.token = ?';
+    $valid =  $app['db']->fetchAssoc($sql, [$token]);
+    if ($valid === false) {
+        return new Response("You are not authorised", 401);
     }
-    elseif($app['security']->isGranted('ROLE_ADMIN')) {
-        $user_id = $app['user_current'];
-        $restaurant = $app['db']->fetchAssoc('select * from restaurants WHERE id = ?', [(int)$id]);
-        $data = $request->request->all();
-        if ($restaurant === false) {
-            return new Response('Restaurant not found', 404);
-        }
-        $restaurantValidator = $app['validate_restaurants'];
-        $errors = $app['validator']->validateValue($data, $restaurantValidator);
-        if (count($errors) > 0) {
-            $errorList = [];
-            foreach ($errors as $error) {
-                $errorList[$error->getPropertyPath()] = $error->getMessage();
+    else {
+        $isCreated = $app['db']->fetchAssoc('select * from restaurants WHERE id = ? AND user_id = ?', [(int)$id, (int)$user]);
+        if ($isCreated === false) {
+            return new Response('You did not create this', 401);
+        } elseif ($app['security']->isGranted('ROLE_ADMIN')) {
+            $user_id = $valid['user_id'];
+            $restaurant = $app['db']->fetchAssoc('select * from restaurants WHERE id = ?', [(int)$id]);
+            $data = $request->request->all();
+            if ($restaurant === false) {
+                return new Response('Restaurant not found', 404);
             }
-            return $app->json($errorList, 400);
+            $restaurantValidator = $app['validate_restaurants'];
+            $errors = $app['validator']->validateValue($data, $restaurantValidator);
+            if (count($errors) > 0) {
+                $errorList = [];
+                foreach ($errors as $error) {
+                    $errorList[$error->getPropertyPath()] = $error->getMessage();
+                }
+                return $app->json($errorList, 400);
+            } else {
+                if ($file_bag->count() > 0)
+                {
+                    $filename = '_img'.md5(rand(10000,99999));
+                    foreach($file_bag as $file) {
+                        $file->move($location, $filename);
+                        $i++;
+                    }
+                    $location = $filename;
+                }
+                $app['db']->update('restaurants',
+                    [
+                        'description' => $data['description'],
+                        'name' => $data['name'],
+                        'address' => $data['address'],
+                        'cuisine_id' => $data['cuisine_id'],
+                        'user_id' => $user_id,
+                        'town' => $data['town'],
+                        'postcode' => $data['postcode'],
+                        'image' => $location,
+                        'type_id' => $data['type_id']
+                    ],
+                    ['id' => (int)$id]
+                );
+                return new Response(null, 204);
+            }
         } else {
-            $app['db']->update('restaurants',
-                [
-                    'description' => $data['description'],
-                    'name' => $data['name'],
-                    'address' => $data['address'],
-                    'cuisine_id' => $data['cuisine_id'],
-                    'user_id' => $user_id,
-                    'town' => $data['town'],
-                    'postcode' => $data['postcode'],
-                    'image' => $data['image'],
-                    'type_id' => $data['type_id']
-                ],
-                ['id' => (int)$id]
-            );
-            return new Response(null, 204);
+            return new Response('Admin task only', 401);
         }
-    }
-    else{
-        return new Response('Admin task only', 401);
     }
 
 });
