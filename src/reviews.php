@@ -48,11 +48,11 @@ $app['user_current'] = function() use($app){
  * Get all reviews
  */
 $api->get('/reviews', function () use($app){
-    $sql = 'select reviews.id, reviews.description, reviews.user_id, restaurants.user_id, restaurants.name as restaurant, type.name AS type,
-                rating, created, modified, cuisine.name AS cuisine, image
-                FROM reviews, restaurants,cuisine, type
-                WHERE restaurant_id = restaurants.id AND restaurants.cuisine_id = cuisine.id
-                AND restaurants.type_id = type.id ORDER BY date(created) DESC';
+    $sql = 'select reviews.id, reviews.description, reviews.user_id, user_info.first_name, restaurants.user_id, restaurants.name as restaurant, type.name AS type,
+  rating, created, modified, cuisine.name AS cuisine, restaurants.image
+FROM reviews, restaurants,cuisine, type, user_info
+WHERE restaurant_id = restaurants.id AND restaurants.cuisine_id = cuisine.id
+      AND restaurants.type_id = type.id AND reviews.user_id = user_info.user_id ORDER BY date(created) DESC';
     $reviews = $app['db']->fetchAll($sql);
     return $app->json($reviews);
 });
@@ -62,11 +62,11 @@ $api->get('/reviews', function () use($app){
 $api->get('/reviews/{id}', function ($id) use($app){
 
     $db = $app['db'];
-    $sql = 'select reviews.id, reviews.description, reviews.user_id, restaurants.name as restaurant, type.name AS type,
-                rating, created, modified, cuisine.name AS cuisine, image
-                FROM reviews, restaurants,cuisine, type
-                WHERE restaurant_id = restaurants.id AND restaurants.cuisine_id = cuisine.id
-                AND restaurants.type_id = type.id AND reviews.id = ?';
+    $sql = 'select reviews.id, reviews.description, reviews.user_id, user_info.first_name, restaurants.user_id, restaurants.name as restaurant, type.name AS type,
+  rating, created, modified, cuisine.name AS cuisine, restaurants.image
+FROM reviews, restaurants,cuisine, type, user_info
+WHERE restaurant_id = restaurants.id AND restaurants.cuisine_id = cuisine.id
+      AND restaurants.type_id = type.id AND reviews.user_id = user_info.user_id AND reviews.id = ?';
     $reviews = $db->fetchAssoc($sql, [(int)$id]);
     if ($reviews == false) {
         return $app->abort(404, 'Review not found');

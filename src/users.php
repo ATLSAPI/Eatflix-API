@@ -82,6 +82,23 @@ $api->get('/tokened', function(Request $request) use ($app)
         return new Response("You are not authorised", 401);
     }
 });
+$api->get('users/{id}/image', function($id) use ($app)
+{
+    $sql = 'select image FROM user_info WHERE user_id = ?';
+    $image = $app['db']->fetchColumn($sql, [(int)$id], 0);
+    if($image == false)
+    {
+        return new Response('Not found', 404);
+    }
+    //$path = '_img0';
+    $path = $image;
+    $location =__DIR__ .'/../public_html/upload/';
+    if (!file_exists($location.$path)) {
+        return $app->abort(404);
+    }
+    return $app->sendFile($location.$path,200, array('Content-type' => 'text/jpg'), 'attachment');
+    //return "Image".$image;
+});
 $api->post('/feedback', function () use ($app) {
     $body = 'Hello';
     $messagebody = $body;
@@ -155,6 +172,8 @@ $api->post('/users/login', function(Request $request) use ($app)
         return new Response("You are not authorised", 401);
     }
     else {
+        $sql = "SELECT first_name || ' ' ||last_name AS fullname  FROM user_info WHERE user_id = ?";
+        $full_name = $app['db']->fetchColumn($sql, [$app->escape($id)], 0);
         $userValidator = $app['validate_users'];
         $errors = $app['validator']->validateValue($data, $userValidator);
         if (count($errors) > 0) {
@@ -168,7 +187,7 @@ $api->post('/users/login', function(Request $request) use ($app)
             $date = $date->format('d/m/Y');
             $device_id = md5(rand(50000, 99999));
             $token = $app['token'];
-            $json = array('id' => $id, 'token' => $token, 'device_id' => $device_id);
+            $json = array('id' => $id, 'token' => $token, 'device_id' => $device_id, 'name' => $full_name);
             $app['db']->insert('token',
                 [
                     'user_id' => $id,
