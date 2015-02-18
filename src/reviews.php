@@ -21,7 +21,9 @@ $api->before(
         }
     }
 );
-
+/*
+ * Validate reviews entries
+ */
 $app['validate_reviews'] = function(){
     $validator = new Assert\Collection([
         'description' => [new Assert\NotBlank(), new Assert\Length(['min'=>3])],
@@ -76,7 +78,7 @@ WHERE restaurant_id = restaurants.id AND restaurants.cuisine_id = cuisine.id
 
 });
 /**
- * Post restaurant
+ * Post reviews
  */
 $api->post('/reviews', function(Request $request) use($app){
     $date= new \DateTime('now');

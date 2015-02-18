@@ -119,11 +119,14 @@ $api->get('restaurants/{id}/image', function($id) use ($app)
 
 });
 $api->get('/restaurants', function () use($app){
-    $sql = 'select restaurants.id, restaurants.name AS restaurant,address,description, postcode, town, type.name AS type,
-                cuisine.name AS cuisine, image
-                FROM restaurants, cuisine, type
-                WHERE restaurants.cuisine_id = cuisine.id
-                AND restaurants.type_id = type.id';
+    $sql = 'select restaurants.id, restaurants.name AS restaurant,address, restaurants.description, postcode, town, type.name AS type,
+  cuisine.name AS cuisine, image, COUNT(reviews.restaurant_id) as reviewed, AVG(COALESCE(rating, 0)) as average
+FROM restaurants
+INNER JOIN cuisine ON restaurants.cuisine_id = cuisine.id
+INNER JOIN type ON restaurants.type_id = type.id
+LEFT JOIN reviews ON restaurants.id = reviews.restaurant_id
+GROUP BY restaurants.id
+ORDER BY average DESC';
     $restaurants = $app['db']->fetchAll($sql);
     return $app->json($restaurants);
 
@@ -156,13 +159,19 @@ $api->get('/pubs', function () use($app){
  */
 $api->get('/restaurants/{id}', function ($id) use($app){
     $db = $app['db'];
-    $sql = 'select restaurants.id, restaurants.name AS restaurant, address, description, postcode, town, type.name AS type,
-                cuisine.name AS cuisine
-                FROM restaurants, cuisine, type
-                WHERE restaurants.cuisine_id = cuisine.id
-                AND restaurants.type_id = type.id AND restaurants.id = ?';
+    $sql = 'select restaurants.id, restaurants.name AS restaurant,address, restaurants.description, postcode, town, type.name AS type,
+                       cuisine.name AS cuisine, image, COUNT(reviews.restaurant_id) as reviewed, COALESCE(AVG(rating),0) as average
+FROM restaurants
+INNER JOIN cuisine ON restaurants.cuisine_id = cuisine.id
+INNER JOIN type ON restaurants.type_id = type.id
+LEFT JOIN reviews ON reviews.restaurant_id = restaurants.id
+WHERE restaurants.id = ?';
     $restaurants = $db->fetchAssoc($sql, [(int)$id]);
     if ($restaurants == false) {
+        return $app->abort(404, 'Restaurant Not found');
+    }
+    elseif($restaurants['id'] == null)
+    {
         return $app->abort(404, 'Restaurant Not found');
     }
     return $app->json($restaurants);
