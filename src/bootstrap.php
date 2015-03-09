@@ -27,4 +27,5 @@ $app->register(new Silex\Provider\SwiftmailerServiceProvider(), array(
         'encryption' => 'ssl',
         'auth_mode' => 'login')
 ));
+
 return $app;

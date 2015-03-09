@@ -42,7 +42,9 @@ $app['validate_restaurants'] = function(){
         'description' => [new Assert\NotBlank(), new Assert\Length(['min'=>5])],
         'type_id' => [new Assert\NotBlank()],
         'cuisine_id' => [new Assert\NotBlank()],
-        'town' => [new Assert\NotBlank()]
+        'town' => [new Assert\NotBlank()],
+        'latitude' => [new Assert\NotBlank()],
+        'longitude' => [new Assert\NotBlank()]
     ]);
 
     return $validator;
@@ -119,7 +121,7 @@ $api->get('restaurants/{id}/image', function($id) use ($app)
 
 });
 $api->get('/restaurants', function () use($app){
-    $sql = 'select restaurants.id, restaurants.name AS restaurant,address, restaurants.description, postcode, town, type.name AS type,
+    $sql = 'select restaurants.id, restaurants.name AS restaurant,address, restaurants.description, postcode, town, restaurants.latitude, restaurants.longitude, type.name AS type,
   cuisine.name AS cuisine, image, COUNT(reviews.restaurant_id) as reviewed, AVG(COALESCE(rating, 0)) as average
 FROM restaurants
 INNER JOIN cuisine ON restaurants.cuisine_id = cuisine.id
@@ -132,24 +134,30 @@ ORDER BY average DESC';
 
 });
 $api->get('/bars', function () use($app){
-    $sql = 'select restaurants.id, restaurants.name AS restaurant,address, description, postcode, town, type.name AS type,
-                cuisine.name AS cuisine
-                FROM restaurants, cuisine, type
-                WHERE restaurants.cuisine_id = cuisine.id
-                AND restaurants.type_id = type.id
-                AND LOWER(type.name) = ?';
+    $sql = 'select restaurants.id, restaurants.name AS restaurant,address, restaurants.description, postcode, town, restaurants.latitude, restaurants.longitude, type.name AS type,
+                       cuisine.name AS cuisine, image, COUNT(reviews.restaurant_id) as reviewed, AVG(COALESCE(rating, 0)) as average
+FROM restaurants
+  INNER JOIN cuisine ON restaurants.cuisine_id = cuisine.id
+  INNER JOIN type ON restaurants.type_id = type.id
+  LEFT JOIN reviews ON restaurants.id = reviews.restaurant_id
+WHERE LOWER(type.name) = ?
+GROUP BY restaurants.id
+ORDER BY average DESC ';
     $restaurants = $app['db']->fetchAll($sql, ['bar']);
     return $app->json($restaurants);
 
 });
 
 $api->get('/pubs', function () use($app){
-    $sql = 'select restaurants.id, restaurants.name AS restaurant,address,description, postcode, town, type.name AS type,
-                cuisine.name AS cuisine
-                FROM restaurants, cuisine, type
-                WHERE restaurants.cuisine_id = cuisine.id
-                AND restaurants.type_id = type.id
-                AND LOWER(type.name) = ?';
+    $sql = 'select restaurants.id, restaurants.name AS restaurant,address, restaurants.description, postcode, town, restaurants.latitude, restaurants.longitude, type.name AS type,
+                       cuisine.name AS cuisine, image, COUNT(reviews.restaurant_id) as reviewed, AVG(COALESCE(rating, 0)) as average
+FROM restaurants
+  INNER JOIN cuisine ON restaurants.cuisine_id = cuisine.id
+  INNER JOIN type ON restaurants.type_id = type.id
+  LEFT JOIN reviews ON restaurants.id = reviews.restaurant_id
+WHERE LOWER(type.name) = ?
+GROUP BY restaurants.id
+ORDER BY average DESC';
     $restaurants = $app['db']->fetchAll($sql, ['pub']);
     return $app->json($restaurants);
 
@@ -223,7 +231,9 @@ $api->post('/restaurants', function(Request $request) use($app){
                     'town' => $data['town'],
                     'postcode' => $data['postcode'],
                     'image' => $location,
-                    'type_id' => $data['type_id']
+                    'type_id' => $data['type_id'],
+                    'latitude'=>$data['latitude'],
+                    'longitude'=>$data['longitude']
                 ]
             );
             $id = $app['db']->lastInsertId();
@@ -285,7 +295,9 @@ $api->put('/restaurants/{id}', function($id, Request $request) use($app) {
                         'town' => $data['town'],
                         'postcode' => $data['postcode'],
                         'image' => $location,
-                        'type_id' => $data['type_id']
+                        'type_id' => $data['type_id'],
+                        'latitude'=>$data['latitude'],
+                        'longitude'=>$data['longitude']
                     ],
                     ['id' => (int)$id]
                 );
@@ -300,11 +312,15 @@ $api->put('/restaurants/{id}', function($id, Request $request) use($app) {
 /**
  * Delete restaurants by id. Return to this
  */
-$api->delete('restaurants/{id}', function($id) use($app) {
+$api->delete('restaurants/{id}', function($id, Request $request) use($app) {
     //$user = $app['user_current'];
-    if (!$app['security']->isGranted('ROLE_ADMIN'))
-    {
-        return new Response('You are not authorised', 401);
+    $token = $request->headers->get('token');
+    $sql = 'select token.user_id, users.roles from token
+            INNER JOIN users ON token.user_id = users.id
+            WHERE token = ?';
+    $valid =  $app['db']->fetchAssoc($sql, [$token]);
+    if ($valid === false) {
+        return new Response("You are not authorised", 401);
     }
     else {
         $sql = 'SELECT * FROM restaurants WHERE id = ?';
@@ -314,7 +330,7 @@ $api->delete('restaurants/{id}', function($id) use($app) {
             return new Response('Restaurant not Found', 404);
         } else {
             $app['db']->delete('restaurants', array('id' => $id));
-            $app['db']->delete('reviews', array('resturant_id' => $id));
+            $app['db']->delete('reviews', array('restaurant_id' => $id));
         }
 
         return new Response(null, 204);

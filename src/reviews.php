@@ -26,8 +26,8 @@ $api->before(
  */
 $app['validate_reviews'] = function(){
     $validator = new Assert\Collection([
-        'description' => [new Assert\NotBlank(), new Assert\Length(['min'=>3])],
-        'rating' => [new Assert\NotBlank(), new Assert\Length(['max'=>2]),/*new Assert\Type(['type'=>"INTEGER"])*/],
+        'description' => [new Assert\NotBlank(), new Assert\Length(['min'=>1])],
+        'rating' => [new Assert\NotBlank(), new Assert\Length(['max'=>4]),/*new Assert\Type(['type'=>"INTEGER"])*/],
         'restaurant_id' => [new Assert\NotBlank(),/*new Assert\Type(['type'=>"INTEGER"])*/],
     ]);
 
@@ -95,12 +95,6 @@ $api->post('/reviews', function(Request $request) use($app){
     else {
         $data = $request->request->all();
         $restaurant_id = $data['restaurant_id'];
-        $sql = 'select * from restaurants WHERE id = ?';
-        $restaurant = $app['db']->fetchAssoc($sql, [(int)$restaurant_id]);
-        if ($restaurant == false) {
-            return $app->abort(400, "Bad Request");
-        }
-
         $reviewValidator = $app['validate_reviews'];
         $errors = $app['validator']->validateValue($data, $reviewValidator);
         $user_id = $valid['user_id'];
@@ -111,6 +105,11 @@ $api->post('/reviews', function(Request $request) use($app){
             }
             return $app->json($errorList, 400);
         } else {
+            $sql = 'select * from restaurants WHERE id = ?';
+            $restaurant = $app['db']->fetchAssoc($sql, [(int)$restaurant_id]);
+            if ($restaurant == false) {
+                return $app->abort(400, "Bad Request");
+            }
             $app['db']->insert('reviews',
                 [
                     'description' => $data['description'],
